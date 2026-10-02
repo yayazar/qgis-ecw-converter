@@ -1,0 +1,13 @@
+[general]
+name=ECW Converter (Ortofoto Sıkıştırıcı)
+qgisMinimumVersion=3.16
+description=Büyük GeoTIFF ortofotoları ECW'ye (veya kayıpsız döşemeli GeoTIFF'e) dönüştürür.
+version=0.1.0
+author=GNSS Nivelman
+email=yasinyazar5300@gmail.com
+about=QGIS'te yüklü GeoTIFF raster katmanını ECW formatına dönüştürür. Georeferans bilgisi korunur, .prj yan dosyası yazılır. ECW sürücüsü GDAL'da yoksa kayıpsız, döşemeli ve piramitli GeoTIFF üretir (Netcad/Civil 3D'de hızlı açılır).
+tracker=https://github.com/yayazar/gnssnivelman/issues
+repository=https://github.com/yayazar/gnssnivelman
+tags=raster,ecw,geotiff,orthophoto,compression
+category=Raster
+experimental=True
