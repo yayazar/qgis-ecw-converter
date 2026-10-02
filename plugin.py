@@ -1,7 +1,7 @@
 import os
 
 from qgis.core import (Qgis, QgsApplication, QgsProject, QgsRasterLayer,
-                       QgsTask)
+                       QgsSettings, QgsTask)
 from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog,
                                  QDialogButtonBox, QFileDialog, QFormLayout,
                                  QHBoxLayout, QLabel, QLineEdit, QPushButton,
@@ -16,11 +16,13 @@ from . import converter
 
 
 class ConvertTask(QgsTask):
-    def __init__(self, src, dst, mode, target, drop_alpha):
+    def __init__(self, src, dst, mode, target, drop_alpha, key=None,
+                 company=None):
         super().__init__("ECW dönüştürme: " + os.path.basename(src),
                          QgsTask.Flag.CanCancel)
         self.src, self.dst, self.mode = src, dst, mode
         self.target, self.drop_alpha = target, drop_alpha
+        self.key, self.company = key, company
         self.error = None
         self.sizes = None
 
@@ -29,7 +31,8 @@ class ConvertTask(QgsTask):
             self.sizes = converter.convert(
                 self.src, self.dst, self.mode, self.target, self.drop_alpha,
                 progress=lambda f: (self.setProgress(f * 100),
-                                    not self.isCanceled())[1])
+                                    not self.isCanceled())[1],
+                ecw_key=self.key, ecw_company=self.company)
             return True
         except Exception as e:  # noqa: BLE001
             self.error = str(e)
@@ -53,6 +56,9 @@ class ConvertDialog(QDialog):
         self.mode = QComboBox()
         if converter.ecw_available():
             self.mode.addItem("ECW (dalgacık sıkıştırma)", converter.MODE_ECW)
+        if converter.jp2_available():
+            self.mode.addItem("JPEG 2000 (kayıpsız, dalgacık)",
+                              converter.MODE_JP2)
         self.mode.addItem("Kayıpsız döşemeli GeoTIFF + piramit",
                           converter.MODE_LOSSLESS_TIFF)
         form.addRow("Çıktı biçimi:", self.mode)
@@ -63,6 +69,12 @@ class ConvertDialog(QDialog):
         self.target.setSuffix(" %")
         self.target.setToolTip("ECW hedef küçülme oranı. 0 = en yüksek kalite.")
         form.addRow("ECW hedef küçülme:", self.target)
+
+        s = QgsSettings()
+        self.company = QLineEdit(s.value("ecw_converter/company", ""))
+        self.key = QLineEdit(s.value("ecw_converter/key", ""))
+        form.addRow("ECW lisans şirketi:", self.company)
+        form.addRow("ECW lisans anahtarı:", self.key)
 
         self.alpha = QCheckBox("4. bandı (alfa) at, RGB yaz")
         form.addRow("", self.alpha)
@@ -92,6 +104,8 @@ class ConvertDialog(QDialog):
     def _refresh(self):
         is_ecw = self.mode.currentData() == converter.MODE_ECW
         self.target.setEnabled(is_ecw)
+        self.company.setEnabled(is_ecw)
+        self.key.setEnabled(is_ecw)
         src = self.layer.currentData()
         if src:
             self.out.setText(converter.default_output(src, self.mode.currentData()))
@@ -100,10 +114,13 @@ class ConvertDialog(QDialog):
             "birebir korunmaz (hedef %0'da bile). Bire bir kayıpsız sonuç "
             "için GeoTIFF seçeneğini kullanın."
             if is_ecw else
+            "JPEG 2000, REVERSIBLE modda yazılır: piksel değerleri birebir "
+            "korunur." if self.mode.currentData() == converter.MODE_JP2 else
             "Kayıpsız (DEFLATE), 512×512 döşemeli, piramitli GeoTIFF üretilir.")
 
     def _browse(self):
         flt = ("ECW (*.ecw)" if self.mode.currentData() == converter.MODE_ECW
+               else "JPEG 2000 (*.jp2)" if self.mode.currentData() == converter.MODE_JP2
                else "GeoTIFF (*.tif)")
         path, _ = QFileDialog.getSaveFileName(self, "Çıktı", self.out.text(), flt)
         if path:
@@ -134,9 +151,13 @@ class EcwConverterPlugin:
             return
         if not dlg.exec():
             return
+        s = QgsSettings()
+        s.setValue("ecw_converter/company", dlg.company.text())
+        s.setValue("ecw_converter/key", dlg.key.text())
         task = ConvertTask(dlg.layer.currentData(), dlg.out.text(),
                            dlg.mode.currentData(), dlg.target.value(),
-                           dlg.alpha.isChecked())
+                           dlg.alpha.isChecked(), dlg.key.text() or None,
+                           dlg.company.text() or None)
         task.taskCompleted.connect(lambda t=task: self._done(t))
         task.taskTerminated.connect(lambda t=task: self._failed(t))
         self._tasks.append(task)

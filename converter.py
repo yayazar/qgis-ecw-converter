@@ -7,19 +7,25 @@ gdal.UseExceptions()
 
 MODE_ECW = "ecw"
 MODE_LOSSLESS_TIFF = "tiff"
+MODE_JP2 = "jp2"
 
 
 def ecw_available():
     return gdal.GetDriverByName("ECW") is not None
 
 
+def jp2_available():
+    return gdal.GetDriverByName("JP2OpenJPEG") is not None
+
+
 def default_output(src_path, mode):
     base, _ = os.path.splitext(src_path)
-    return base + ("_ecw.ecw" if mode == MODE_ECW else "_opt.tif")
+    suffix = {MODE_ECW: "_ecw.ecw", MODE_JP2: "_jp2.jp2"}.get(mode, "_opt.tif")
+    return base + suffix
 
 
 def convert(src_path, dst_path, mode, target=None, drop_alpha=False,
-            progress=None):
+            progress=None, ecw_key=None, ecw_company=None):
     """Kaynak rasteri dönüştürür; dönen değer: (çıktı_boyutu, kaynak_boyutu).
 
     target: ECW için hedef küçülme yüzdesi (düşük = yüksek kalite). 0 = en
@@ -42,9 +48,20 @@ def convert(src_path, dst_path, mode, target=None, drop_alpha=False,
     if mode == MODE_ECW:
         if not ecw_available():
             raise RuntimeError("Bu GDAL sürümünde ECW sürücüsü yok.")
+        if ecw_key and ecw_company:
+            gdal.SetConfigOption("ECW_ENCODE_KEY", ecw_key)
+            gdal.SetConfigOption("ECW_ENCODE_COMPANY", ecw_company)
         opts = gdal.TranslateOptions(
             format="ECW", bandList=bands, callback=cb,
             creationOptions=["TARGET=%d" % int(target or 0)])
+    elif mode == MODE_JP2:
+        if not jp2_available():
+            raise RuntimeError("Bu GDAL sürümünde JP2OpenJPEG sürücüsü yok.")
+        opts = gdal.TranslateOptions(
+            format="JP2OpenJPEG", bandList=bands, callback=cb,
+            creationOptions=["QUALITY=100", "REVERSIBLE=YES",
+                             "BLOCKXSIZE=1024", "BLOCKYSIZE=1024",
+                             "YCBCR420=NO"])
     else:
         opts = gdal.TranslateOptions(
             format="GTiff", bandList=bands, callback=cb,
@@ -52,7 +69,12 @@ def convert(src_path, dst_path, mode, target=None, drop_alpha=False,
                              "COMPRESS=DEFLATE", "PREDICTOR=2", "ZLEVEL=9",
                              "BIGTIFF=IF_SAFER", "NUM_THREADS=ALL_CPUS"])
 
-    out = gdal.Translate(dst_path, src, options=opts)
+    try:
+        out = gdal.Translate(dst_path, src, options=opts)
+    finally:
+        if mode == MODE_ECW:
+            gdal.SetConfigOption("ECW_ENCODE_KEY", None)
+            gdal.SetConfigOption("ECW_ENCODE_COMPANY", None)
     if out is None:
         raise RuntimeError("Dönüştürme başarısız.")
     out.FlushCache()
