@@ -1,6 +1,7 @@
 [general]
 name=ECW Converter (Ortofoto Sıkıştırıcı)
 qgisMinimumVersion=3.16
+supportsQt6=True
 description=Büyük GeoTIFF ortofotoları ECW'ye (veya kayıpsız döşemeli GeoTIFF'e) dönüştürür.
 version=0.1.0
 author=GNSS Nivelman

@@ -1,11 +1,16 @@
 import os
 
-from qgis.core import (Qgis, QgsApplication, QgsMapLayer, QgsProject,
+from qgis.core import (Qgis, QgsApplication, QgsProject, QgsRasterLayer,
                        QgsTask)
-from qgis.PyQt.QtWidgets import (QAction, QCheckBox, QComboBox, QDialog,
+from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog,
                                  QDialogButtonBox, QFileDialog, QFormLayout,
                                  QHBoxLayout, QLabel, QLineEdit, QPushButton,
                                  QSpinBox)
+
+try:  # Qt6 (QGIS 4)
+    from qgis.PyQt.QtGui import QAction
+except ImportError:  # Qt5 (QGIS 3)
+    from qgis.PyQt.QtWidgets import QAction
 
 from . import converter
 
@@ -13,7 +18,7 @@ from . import converter
 class ConvertTask(QgsTask):
     def __init__(self, src, dst, mode, target, drop_alpha):
         super().__init__("ECW dönüştürme: " + os.path.basename(src),
-                         QgsTask.CanCancel)
+                         QgsTask.Flag.CanCancel)
         self.src, self.dst, self.mode = src, dst, mode
         self.target, self.drop_alpha = target, drop_alpha
         self.error = None
@@ -40,7 +45,7 @@ class ConvertDialog(QDialog):
 
         self.layer = QComboBox()
         for lyr in QgsProject.instance().mapLayers().values():
-            if (lyr.type() == QgsMapLayer.RasterLayer
+            if (isinstance(lyr, QgsRasterLayer)
                     and os.path.isfile(lyr.source())):
                 self.layer.addItem(lyr.name(), lyr.source())
         form.addRow("Raster katman:", self.layer)
@@ -74,7 +79,8 @@ class ConvertDialog(QDialog):
         self.note.setWordWrap(True)
         form.addRow(self.note)
 
-        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                              | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         form.addRow(bb)
@@ -126,7 +132,7 @@ class EcwConverterPlugin:
             self.iface.messageBar().pushWarning(
                 "ECW Converter", "Projede dosya tabanlı raster katman yok.")
             return
-        if not dlg.exec_():
+        if not dlg.exec():
             return
         task = ConvertTask(dlg.layer.currentData(), dlg.out.text(),
                            dlg.mode.currentData(), dlg.target.value(),
@@ -142,12 +148,12 @@ class EcwConverterPlugin:
             "ECW Converter",
             "Bitti: %s (%.1f MB → %.1f MB)" % (
                 os.path.basename(t.dst), src / 1e6, out / 1e6),
-            level=Qgis.Success, duration=0)
+            level=Qgis.MessageLevel.Success, duration=0)
         self._tasks.remove(t)
         self.iface.addRasterLayer(t.dst, os.path.basename(t.dst))
 
     def _failed(self, t):
         msg = t.error or "İptal edildi."
         self.iface.messageBar().pushMessage(
-            "ECW Converter", msg, level=Qgis.Critical, duration=0)
+            "ECW Converter", msg, level=Qgis.MessageLevel.Critical, duration=0)
         self._tasks.remove(t)
